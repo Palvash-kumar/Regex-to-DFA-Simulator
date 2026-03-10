@@ -68,7 +68,7 @@ Students and educators can enter any regular expression and instantly see how it
 
 1. **Clone or download** the project:
    ```
-   https://github.com/Palvash-kumar/Regex-to-DFA-Simulator.git
+   git clone https://github.com/Palvash-kumar/Regex-to-DFA-Simulator.git
    ```
 
 2. **Open** `index.html` in your browser.
