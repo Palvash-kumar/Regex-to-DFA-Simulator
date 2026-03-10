@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Regex to DFA Simulator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-badge">Theory of Computation</div>
+    <h1>Regex to DFA Simulator</h1>
+    <p class="subtitle">Regular Expression &rarr; NFA (Thompson) &rarr; DFA (Subset Construction) &rarr; Minimized DFA</p>
+  </header>
+
+  <main class="container">
+    <!-- Regex Input Panel -->
+    <section class="panel input-panel">
+      <h2>Regular Expression Input</h2>
+      <div class="input-row">
+        <input type="text" id="regexInput" placeholder="Enter regex, e.g. (a|b)*abb" spellcheck="false" />
+        <button id="generateBtn" class="btn btn-primary">Generate Automata</button>
+      </div>
+      <div class="examples">
+        <span class="examples-label">Examples:</span>
+        <button class="btn btn-example" data-regex="(a|b)*abb">(a|b)*abb</button>
+        <button class="btn btn-example" data-regex="a*b*">a*b*</button>
+        <button class="btn btn-example" data-regex="ab|ba">ab|ba</button>
+        <button class="btn btn-example" data-regex="(a|b)a*">(a|b)a*</button>
+        <button class="btn btn-example" data-regex="(a|b)*">(a|b)*</button>
+        <button class="btn btn-example" data-regex="a(b|c)*d">a(b|c)*d</button>
+      </div>
+      <div id="errorMsg" class="error-msg hidden"></div>
+    </section>
+
+    <!-- Pipeline Indicator -->
+    <div id="pipeline" class="pipeline hidden">
+      <div class="pipeline-step active" data-step="nfa">
+        <div class="step-num">1</div>
+        <div class="step-label">NFA</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step" data-step="dfa">
+        <div class="step-num">2</div>
+        <div class="step-label">DFA</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step" data-step="minDfa">
+        <div class="step-num">3</div>
+        <div class="step-label">Min DFA</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step" data-step="test">
+        <div class="step-num">4</div>
+        <div class="step-label">Test</div>
+      </div>
+    </div>
+
+    <!-- NFA Section -->
+    <section id="nfaSection" class="panel result-panel hidden">
+      <h2>Step 1: NFA (Thompson's Construction)</h2>
+      <div class="viz-container">
+        <div id="nfaGraph" class="graph-area"></div>
+      </div>
+      <div class="table-section">
+        <h3>NFA Transition Table</h3>
+        <div id="nfaTable" class="table-wrapper"></div>
+        <div class="state-info">
+          <span><strong>Start State:</strong> <span id="nfaStart"></span></span>
+          <span><strong>Accept State:</strong> <span id="nfaAccept"></span></span>
+          <span><strong>Total States:</strong> <span id="nfaCount"></span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- DFA Section -->
+    <section id="dfaSection" class="panel result-panel hidden">
+      <h2>Step 2: DFA (Subset Construction)</h2>
+      <div class="viz-container">
+        <div id="dfaGraph" class="graph-area"></div>
+      </div>
+      <div class="table-section">
+        <h3>DFA Transition Table</h3>
+        <div id="dfaTable" class="table-wrapper"></div>
+        <div class="state-info">
+          <span><strong>Start State:</strong> <span id="dfaStart"></span></span>
+          <span><strong>Accept States:</strong> <span id="dfaAccept"></span></span>
+          <span><strong>Total States:</strong> <span id="dfaCount"></span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Minimized DFA Section -->
+    <section id="minDfaSection" class="panel result-panel hidden">
+      <h2>Step 3: Minimized DFA</h2>
+      <div class="viz-container">
+        <div id="minDfaGraph" class="graph-area"></div>
+      </div>
+      <div class="table-section">
+        <h3>Minimized DFA Transition Table</h3>
+        <div id="minDfaTable" class="table-wrapper"></div>
+        <div class="state-info">
+          <span><strong>Start State:</strong> <span id="minDfaStart"></span></span>
+          <span><strong>Accept States:</strong> <span id="minDfaAccept"></span></span>
+          <span><strong>Total States:</strong> <span id="minDfaCount"></span></span>
+          <span class="reduction" id="reduction"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- String Testing Section -->
+    <section id="testSection" class="panel result-panel hidden">
+      <h2>Step 4: String Testing</h2>
+      <div class="input-row">
+        <input type="text" id="testString" placeholder="Enter a test string, e.g. abb" spellcheck="false" />
+        <button id="testBtn" class="btn btn-primary">Test String</button>
+      </div>
+      <div id="testResult" class="test-result hidden"></div>
+      <div id="simulationPath" class="sim-path hidden"></div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p class="footer-brand">Regex to DFA Simulator</p>
+    <p>Theory of Computation &mdash; Made by Sunny</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
