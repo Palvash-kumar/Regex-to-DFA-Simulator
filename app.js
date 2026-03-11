@@ -936,45 +936,207 @@
   // 11. EXPORT DFA
   // ----------------------------------------------------------
 
-  function exportDFA(dfa, minDfa) {
-    let text = "=== Regex to DFA Simulator - Export ===\n\n";
+  function exportDFA(nfa, dfa, minDfa, regex) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const contentW = pw - margin * 2;
+    let y = margin;
 
-    text += "--- DFA ---\n";
-    text += "States: " + dfa.states.map(s => "q" + s).join(", ") + "\n";
-    text += "Alphabet: " + [...dfa.alphabet].join(", ") + "\n";
-    text += "Start: q" + dfa.start + "\n";
-    text += "Accept: " + dfa.acceptStates.map(s => "q" + s).join(", ") + "\n";
-    text += "Transitions:\n";
-    for (const t of dfa.transitions) {
-      text += "  q" + t.from + " --" + t.symbol + "--> q" + t.to + "\n";
-    }
-
-    text += "\n--- Minimized DFA ---\n";
-    text += "States: " + minDfa.states.map(s => "q" + s).join(", ") + "\n";
-    text += "Alphabet: " + [...minDfa.alphabet].join(", ") + "\n";
-    text += "Start: q" + minDfa.start + "\n";
-    text += "Accept: " + minDfa.acceptStates.map(s => "q" + s).join(", ") + "\n";
-    text += "Transitions:\n";
-    for (const t of minDfa.transitions) {
-      text += "  q" + t.from + " --" + t.symbol + "--> q" + t.to + "\n";
-    }
-
-    if (minDfa.partitions) {
-      text += "\nPartitions:\n";
-      for (let i = 0; i < minDfa.partitions.length; i++) {
-        text += "  P" + i + " = {" + minDfa.partitions[i].map(s => "q" + s).join(", ") + "}\n";
+    function checkPage(needed) {
+      if (y + needed > ph - margin) {
+        doc.addPage();
+        y = margin;
       }
     }
 
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "dfa-export.txt";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    function heading(text, size) {
+      checkPage(12);
+      doc.setFontSize(size);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(40, 40, 40);
+      doc.text(text, margin, y);
+      y += size * 0.45;
+    }
+
+    function label(text) {
+      checkPage(8);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(80, 80, 80);
+      doc.text(text, margin, y);
+      y += 5;
+    }
+
+    function addGraphImage(cyInstance) {
+      if (!cyInstance) return;
+      const png = cyInstance.png({ output: "base64", bg: "#ffffff", scale: 2, full: true });
+      const imgW = contentW;
+      const imgH = 55;
+      checkPage(imgH + 4);
+      doc.addImage(png, "PNG", margin, y, imgW, imgH);
+      y += imgH + 4;
+    }
+
+    function addTransitionTable(automaton, isNFA, composition) {
+      const { states, alphabet, transitions, start } = automaton;
+      const accSet = new Set(isNFA ? [automaton.accept] : automaton.acceptStates);
+      const symbols = isNFA ? [...alphabet, EPSILON] : [...alphabet];
+
+      // Build transition map
+      const tMap = new Map();
+      for (const s of states) {
+        const row = {};
+        for (const sym of symbols) row[sym] = isNFA ? new Set() : null;
+        tMap.set(s, row);
+      }
+      for (const t of transitions) {
+        if (isNFA) tMap.get(t.from)[t.symbol].add(t.to);
+        else tMap.get(t.from)[t.symbol] = t.to;
+      }
+
+      // Build header
+      const headers = ["State"];
+      if (composition) headers.push("NFA States");
+      for (const sym of symbols) headers.push(sym);
+
+      // Build rows
+      const rows = [];
+      for (const s of states) {
+        const prefix = (s === start ? "\u2192 " : "") + (accSet.has(s) ? "* " : "");
+        const row = [prefix + "q" + s];
+        if (composition) {
+          const nfaStates = composition.get(s);
+          row.push("{" + [...nfaStates].sort((a, b) => a - b).map(x => "q" + x).join(", ") + "}");
+        }
+        for (const sym of symbols) {
+          if (isNFA) {
+            const targets = tMap.get(s)[sym];
+            row.push(targets.size > 0 ? [...targets].map(t => "q" + t).join(", ") : "\u2205");
+          } else {
+            const target = tMap.get(s)[sym];
+            row.push(target !== null ? "q" + target : "\u2205");
+          }
+        }
+        rows.push(row);
+      }
+
+      const colCount = headers.length;
+      const colW = Math.min(contentW / colCount, 24);
+      const tableW = colW * colCount;
+      const rowH = 6;
+      const tableH = (rows.length + 1) * rowH;
+      checkPage(tableH + 4);
+
+      const tx = margin;
+
+      // Header row
+      doc.setFillColor(240, 240, 250);
+      doc.rect(tx, y, tableW, rowH, "F");
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(60, 60, 120);
+      for (let c = 0; c < colCount; c++) {
+        doc.text(headers[c], tx + c * colW + colW / 2, y + rowH - 1.5, { align: "center" });
+      }
+      y += rowH;
+
+      // Data rows
+      doc.setFont("courier", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(50, 50, 50);
+      for (let r = 0; r < rows.length; r++) {
+        if (r % 2 === 0) {
+          doc.setFillColor(248, 248, 252);
+          doc.rect(tx, y, tableW, rowH, "F");
+        }
+        for (let c = 0; c < colCount; c++) {
+          doc.text(String(rows[r][c]), tx + c * colW + colW / 2, y + rowH - 1.5, { align: "center" });
+        }
+        y += rowH;
+      }
+
+      // Table border
+      doc.setDrawColor(180, 180, 200);
+      doc.setLineWidth(0.2);
+      doc.rect(tx, y - (rows.length + 1) * rowH, tableW, (rows.length + 1) * rowH);
+      y += 3;
+    }
+
+    // ======== PDF Content ========
+
+    // Title
+    heading("Regex to DFA Simulator", 18);
+    y += 1;
+    label("Regular Expression \u2192 NFA (Thompson) \u2192 DFA (Subset Construction) \u2192 Minimized DFA");
+    y += 2;
+
+    // Regex
+    doc.setDrawColor(139, 92, 246);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pw - margin, y);
+    y += 5;
+    heading("Input Regular Expression", 12);
+    doc.setFontSize(12);
+    doc.setFont("courier", "bold");
+    doc.setTextColor(100, 50, 200);
+    doc.text(regex, margin, y);
+    y += 8;
+
+    // ---- NFA SECTION ----
+    heading("Step 1: NFA (Thompson's Construction)", 13);
+    y += 1;
+    label("Start: q" + nfa.start + "   |   Accept: q" + nfa.accept + "   |   Total States: " + nfa.states.length);
+    addGraphImage(nfaCy);
+    label("NFA Transition Table:");
+    addTransitionTable(nfa, true, null);
+    y += 4;
+
+    // ---- DFA SECTION ----
+    heading("Step 2: DFA (Subset Construction)", 13);
+    y += 1;
+    label("Start: q" + dfa.start + "   |   Accept: " + dfa.acceptStates.map(s => "q" + s).join(", ") + "   |   Total States: " + dfa.states.length);
+    addGraphImage(dfaCy);
+    label("DFA Transition Table:");
+    addTransitionTable(dfa, false, dfa.stateComposition);
+    y += 4;
+
+    // ---- MinDFA SECTION ----
+    heading("Step 3: Minimized DFA (Hopcroft's Algorithm)", 13);
+    y += 1;
+    const reduced = dfa.states.length - minDfa.states.length;
+    const reductionText = reduced > 0
+      ? "Reduced by " + reduced + " state" + (reduced > 1 ? "s" : "") + ": " + dfa.states.length + " \u2192 " + minDfa.states.length
+      : "Already minimal";
+    label("Start: q" + minDfa.start + "   |   Accept: " + minDfa.acceptStates.map(s => "q" + s).join(", ") + "   |   Total States: " + minDfa.states.length + "   |   " + reductionText);
+    addGraphImage(minDfaCy);
+    label("Minimized DFA Transition Table:");
+    addTransitionTable(minDfa, false, null);
+
+    // Partitions
+    if (minDfa.partitions) {
+      y += 3;
+      label("State Partitions:");
+      for (let i = 0; i < minDfa.partitions.length; i++) {
+        label("  P" + i + " = { " + minDfa.partitions[i].map(s => "q" + s).join(", ") + " }");
+      }
+    }
+
+    // Footer
+    y += 6;
+    checkPage(10);
+    doc.setDrawColor(139, 92, 246);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y, pw - margin, y);
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(130, 130, 140);
+    doc.text("Generated by Regex to DFA Simulator \u2014 Theory of Computation", pw / 2, y, { align: "center" });
+
+    doc.save("regex-to-dfa-report.pdf");
   }
 
   // ----------------------------------------------------------
@@ -1003,9 +1165,13 @@
   // 13. MAIN APP CONTROLLER
   // ----------------------------------------------------------
 
-  let currentMinDfa = null;
+  let currentNfa = null;
   let currentDfa = null;
+  let currentMinDfa = null;
+  let nfaCy = null;
+  let dfaCy = null;
   let minDfaCy = null;
+  let lastRegex = "";
 
   const regexInput   = document.getElementById("regexInput");
   const generateBtn  = document.getElementById("generateBtn");
@@ -1041,9 +1207,13 @@
     exportSection.classList.add("hidden");
     testResult.classList.add("hidden");
     simPath.classList.add("hidden");
-    currentMinDfa = null;
+    currentNfa = null;
     currentDfa = null;
+    currentMinDfa = null;
+    nfaCy = null;
+    dfaCy = null;
     minDfaCy = null;
+    lastRegex = "";
   }
 
   function updatePipeline(step) {
@@ -1096,7 +1266,9 @@
       document.getElementById("nfaStart").textContent  = "q" + nfa.start;
       document.getElementById("nfaAccept").textContent = "q" + nfa.accept;
       document.getElementById("nfaCount").textContent  = nfa.states.length;
-      renderAutomaton("nfaGraph", nfa, true);
+      nfaCy = renderAutomaton("nfaGraph", nfa, true);
+      currentNfa = nfa;
+      lastRegex = regex;
       renderStepLog("nfaSteps", thompsonLog);
 
       // Step 2: DFA
@@ -1109,7 +1281,7 @@
       document.getElementById("dfaStart").textContent  = "q" + dfa.start;
       document.getElementById("dfaAccept").textContent = dfa.acceptStates.map(s => "q" + s).join(", ");
       document.getElementById("dfaCount").textContent  = dfa.states.length;
-      renderAutomaton("dfaGraph", dfa, false);
+      dfaCy = renderAutomaton("dfaGraph", dfa, false);
       renderStepLog("dfaSteps", subsetLog);
 
       // Step 3: Minimized DFA
@@ -1209,8 +1381,8 @@
   });
 
   exportBtn.addEventListener("click", () => {
-    if (currentDfa && currentMinDfa) {
-      exportDFA(currentDfa, currentMinDfa);
+    if (currentNfa && currentDfa && currentMinDfa) {
+      exportDFA(currentNfa, currentDfa, currentMinDfa, lastRegex);
     }
   });
 
