@@ -815,7 +815,9 @@
   function animateString(cy, dfa, str) {
     if (animationRunning) return;
 
-    const animateBtn = document.getElementById("animateBtn");
+    const animateBtnEl = document.getElementById("animateBtn");
+    const testResultEl = document.getElementById("testResult");
+    const simPathEl    = document.getElementById("simulationPath");
     const { alphabet, transitions, start, acceptStates } = dfa;
     const transMap = new Map();
     for (const s of dfa.states) transMap.set(s, {});
@@ -823,18 +825,29 @@
       transMap.get(t.from)[t.symbol] = t.to;
     }
 
-    // Validate string first
+    // Validate string characters
     for (const ch of str) {
-      if (!alphabet.includes(ch)) return;
+      if (!alphabet.includes(ch)) {
+        testResultEl.classList.remove("hidden", "accepted", "rejected");
+        testResultEl.classList.add("rejected");
+        testResultEl.textContent = "REJECTED \u2014 Character '" + ch + "' not in alphabet {" + alphabet.join(", ") + "}";
+        simPathEl.classList.add("hidden");
+        return;
+      }
     }
 
     animationRunning = true;
-    animateBtn.disabled = true;
+    animateBtnEl.disabled = true;
 
-    // Clear previous animation classes
+    // Clear previous results and animation classes
+    testResultEl.classList.add("hidden");
+    testResultEl.classList.remove("accepted", "rejected");
+    simPathEl.classList.remove("hidden");
+    simPathEl.innerHTML = "<strong>Simulation Trace:</strong><br>";
     cy.nodes().removeClass("anim-active anim-accept anim-reject");
     cy.edges().removeClass("anim-active");
 
+    // Pre-compute all steps
     let current = start;
     const steps = [];
     let valid = true;
@@ -850,46 +863,66 @@
       current = next;
     }
 
-    const delay = 600;
+    const accepted = valid && acceptStates.includes(current);
+    const delay = 700;
     let stepIdx = 0;
 
-    // Highlight start state
+    // Show start state on graph and in trace
     const startNode = cy.getElementById("s" + start);
     startNode.addClass("anim-active");
+    simPathEl.innerHTML += '<span class="state-tag">q' + start + '</span>';
 
     function nextStep() {
       if (stepIdx >= steps.length) {
-        // Final state coloring
-        const finalState = steps.length > 0 ? steps[steps.length - 1].to : start;
+        // Animation finished — show final result
         cy.nodes().removeClass("anim-active");
+
+        const finalState = steps.length > 0 ? steps[steps.length - 1].to : start;
+
         if (finalState !== null) {
           const finalNode = cy.getElementById("s" + finalState);
-          if (valid && acceptStates.includes(finalState)) {
+          if (accepted) {
             finalNode.addClass("anim-accept");
           } else {
             finalNode.addClass("anim-reject");
           }
+          const tag = accepted ? "accept-tag" : "reject-tag";
+          const label = accepted ? "ACCEPT" : "NOT ACCEPT";
+          simPathEl.innerHTML += ' \u2192 <span class="state-tag ' + tag + '">' + label + '</span>';
         }
+
+        // Show final verdict banner
+        testResultEl.classList.remove("hidden", "accepted", "rejected");
+        testResultEl.classList.add(accepted ? "accepted" : "rejected");
+        testResultEl.textContent = accepted
+          ? "\u2713 ACCEPTED \u2014 String \"" + str + "\" is in the language."
+          : "\u2717 REJECTED \u2014 String \"" + str + "\" is NOT in the language.";
+
         animationRunning = false;
-        animateBtn.disabled = false;
+        animateBtnEl.disabled = false;
         return;
       }
 
       const step = steps[stepIdx];
 
-      // Clear previous highlights
+      // Clear previous highlights on graph
       cy.nodes().removeClass("anim-active");
       cy.edges().removeClass("anim-active");
 
-      // Highlight edge
-      const edgeId = "e_" + step.from + "->" + step.to;
-      const edge = cy.getElementById(edgeId);
-      if (edge.length) edge.addClass("anim-active");
+      // Highlight edge on graph
+      if (step.to !== null) {
+        const edgeId = "e_" + step.from + "->" + step.to;
+        const edge = cy.getElementById(edgeId);
+        if (edge.length) edge.addClass("anim-active");
+      }
 
-      // Highlight target node
+      // Highlight target node on graph & append to trace
       if (step.to !== null) {
         const targetNode = cy.getElementById("s" + step.to);
         targetNode.addClass("anim-active");
+        simPathEl.innerHTML += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag">q' + step.to + '</span>';
+      } else {
+        simPathEl.innerHTML += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag reject-tag">dead</span>';
       }
 
       stepIdx++;
@@ -1172,9 +1205,6 @@
   animateBtn.addEventListener("click", () => {
     if (!currentMinDfa || !minDfaCy) return;
     const str = testStringEl.value;
-    // Run the test first to show results
-    runTest();
-    // Then animate on the graph
     animateString(minDfaCy, currentMinDfa, str);
   });
 
