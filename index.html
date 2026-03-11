@@ -65,71 +65,110 @@
 
     <!-- NFA Section -->
     <section id="nfaSection" class="panel result-panel hidden">
-      <h2>Step 1: NFA (Thompson's Construction)</h2>
-      <div class="viz-container">
-        <div id="nfaGraph" class="graph-area"></div>
+      <div class="section-header collapsible" data-target="nfaContent">
+        <h2>Step 1: NFA <span class="tooltip" data-tip="Thompson's Construction builds an NFA from the regex by creating small fragments for each operator and combining them with ε-transitions.">(Thompson's Construction)</span></h2>
+        <span class="collapse-icon">&#9660;</span>
       </div>
-      <div class="table-section">
-        <h3>NFA Transition Table</h3>
-        <div id="nfaTable" class="table-wrapper"></div>
-        <div class="state-info">
-          <span><strong>Start State:</strong> <span id="nfaStart"></span></span>
-          <span><strong>Accept State:</strong> <span id="nfaAccept"></span></span>
-          <span><strong>Total States:</strong> <span id="nfaCount"></span></span>
+      <div id="nfaContent" class="collapsible-content">
+        <div class="viz-container">
+          <div id="nfaGraph" class="graph-area"></div>
+        </div>
+        <div class="algo-steps-section">
+          <h3>Construction Steps</h3>
+          <div id="nfaSteps" class="algo-steps"></div>
+        </div>
+        <div class="table-section">
+          <h3>NFA Transition Table</h3>
+          <div id="nfaTable" class="table-wrapper"></div>
+          <div class="state-info">
+            <span><strong>Start State:</strong> <span id="nfaStart"></span></span>
+            <span><strong>Accept State:</strong> <span id="nfaAccept"></span></span>
+            <span><strong>Total States:</strong> <span id="nfaCount"></span></span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- DFA Section -->
     <section id="dfaSection" class="panel result-panel hidden">
-      <h2>Step 2: DFA (Subset Construction)</h2>
-      <div class="viz-container">
-        <div id="dfaGraph" class="graph-area"></div>
+      <div class="section-header collapsible" data-target="dfaContent">
+        <h2>Step 2: DFA <span class="tooltip" data-tip="Subset Construction converts the NFA to a DFA by computing ε-closures and tracking sets of NFA states as single DFA states.">(Subset Construction)</span></h2>
+        <span class="collapse-icon">&#9660;</span>
       </div>
-      <div class="table-section">
-        <h3>DFA Transition Table</h3>
-        <div id="dfaTable" class="table-wrapper"></div>
-        <div class="state-info">
-          <span><strong>Start State:</strong> <span id="dfaStart"></span></span>
-          <span><strong>Accept States:</strong> <span id="dfaAccept"></span></span>
-          <span><strong>Total States:</strong> <span id="dfaCount"></span></span>
+      <div id="dfaContent" class="collapsible-content">
+        <div class="viz-container">
+          <div id="dfaGraph" class="graph-area"></div>
+        </div>
+        <div class="algo-steps-section">
+          <h3>Construction Steps</h3>
+          <div id="dfaSteps" class="algo-steps"></div>
+        </div>
+        <div class="table-section">
+          <h3>DFA Transition Table</h3>
+          <div id="dfaTable" class="table-wrapper"></div>
+          <div class="state-info">
+            <span><strong>Start State:</strong> <span id="dfaStart"></span></span>
+            <span><strong>Accept States:</strong> <span id="dfaAccept"></span></span>
+            <span><strong>Total States:</strong> <span id="dfaCount"></span></span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- Minimized DFA Section -->
     <section id="minDfaSection" class="panel result-panel hidden">
-      <h2>Step 3: Minimized DFA</h2>
-      <div class="viz-container">
-        <div id="minDfaGraph" class="graph-area"></div>
+      <div class="section-header collapsible" data-target="minDfaContent">
+        <h2>Step 3: Minimized DFA <span class="tooltip" data-tip="Hopcroft's algorithm merges equivalent states by iteratively refining partitions until no further splits are possible.">(Hopcroft's Algorithm)</span></h2>
+        <span class="collapse-icon">&#9660;</span>
       </div>
-      <div class="table-section">
-        <h3>Minimized DFA Transition Table</h3>
-        <div id="minDfaTable" class="table-wrapper"></div>
-        <div class="state-info">
-          <span><strong>Start State:</strong> <span id="minDfaStart"></span></span>
-          <span><strong>Accept States:</strong> <span id="minDfaAccept"></span></span>
-          <span><strong>Total States:</strong> <span id="minDfaCount"></span></span>
-          <span class="reduction" id="reduction"></span>
+      <div id="minDfaContent" class="collapsible-content">
+        <div class="viz-container">
+          <div id="minDfaGraph" class="graph-area"></div>
+        </div>
+        <div class="algo-steps-section">
+          <h3>Partition Refinement Steps</h3>
+          <div id="partitionSteps" class="algo-steps"></div>
+        </div>
+        <div id="partitionViz" class="partition-viz"></div>
+        <div class="table-section">
+          <h3>Minimized DFA Transition Table</h3>
+          <div id="minDfaTable" class="table-wrapper"></div>
+          <div class="state-info">
+            <span><strong>Start State:</strong> <span id="minDfaStart"></span></span>
+            <span><strong>Accept States:</strong> <span id="minDfaAccept"></span></span>
+            <span><strong>Total States:</strong> <span id="minDfaCount"></span></span>
+            <span class="reduction" id="reduction"></span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- String Testing Section -->
     <section id="testSection" class="panel result-panel hidden">
-      <h2>Step 4: String Testing</h2>
-      <div class="input-row">
-        <input type="text" id="testString" placeholder="Enter a test string, e.g. abb" spellcheck="false" />
-        <button id="testBtn" class="btn btn-primary">Test String</button>
+      <div class="section-header collapsible" data-target="testContent">
+        <h2>Step 4: String Testing</h2>
+        <span class="collapse-icon">&#9660;</span>
       </div>
-      <div id="testResult" class="test-result hidden"></div>
-      <div id="simulationPath" class="sim-path hidden"></div>
+      <div id="testContent" class="collapsible-content">
+        <div class="input-row">
+          <input type="text" id="testString" placeholder="Enter a test string, e.g. abb" spellcheck="false" />
+          <button id="testBtn" class="btn btn-primary">Test String</button>
+          <button id="animateBtn" class="btn btn-animate" title="Animate the string processing on the MinDFA graph">&#9654; Animate</button>
+        </div>
+        <div id="testResult" class="test-result hidden"></div>
+        <div id="simulationPath" class="sim-path hidden"></div>
+      </div>
     </section>
+
+    <!-- Export Section -->
+    <div id="exportSection" class="export-section hidden">
+      <button id="exportBtn" class="btn btn-export" title="Export the minimized DFA definition as a text file">&#11015; Export DFA</button>
+    </div>
   </main>
 
   <footer class="app-footer">
     <p class="footer-brand">Regex to DFA Simulator</p>
-    <p>Theory of Computation &mdash; Made by Sunny</p>
+    <p>Theory of Computation &mdash; Made by Palvash</p>
   </footer>
 
   <script src="app.js"></script>

@@ -5,21 +5,14 @@
 (() => {
   "use strict";
 
-  // ----------------------------------------------------------
-  // 1. REGEX PARSER  (Regex string → AST)
-  // ----------------------------------------------------------
-  // Grammar (precedence low→high):
-  //   expr   = term ('|' term)*
-  //   term   = factor factor*
-  //   factor = atom ('*')*
-  //   atom   = char | '(' expr ')'
+  const EPSILON = "\u03b5";
 
-  const EPSILON = "ε";
+  // ----------------------------------------------------------
+  // 1. REGEX PARSER  (Regex string -> AST)
+  // ----------------------------------------------------------
 
   function parseRegex(input) {
     let pos = 0;
-
-    // Insert explicit concatenation operator '.'
     const processed = insertConcat(input);
 
     function peek() { return processed[pos]; }
@@ -28,7 +21,7 @@
     function parseExpr() {
       let node = parseTerm();
       while (pos < processed.length && peek() === "|") {
-        advance(); // consume '|'
+        advance();
         const right = parseTerm();
         node = { type: "union", left: node, right };
       }
@@ -38,7 +31,7 @@
     function parseTerm() {
       let node = parseFactor();
       while (pos < processed.length && peek() === ".") {
-        advance(); // consume '.'
+        advance();
         const right = parseFactor();
         node = { type: "concat", left: node, right };
       }
@@ -48,7 +41,7 @@
     function parseFactor() {
       let node = parseAtom();
       while (pos < processed.length && peek() === "*") {
-        advance(); // consume '*'
+        advance();
         node = { type: "star", child: node };
       }
       return node;
@@ -56,10 +49,10 @@
 
     function parseAtom() {
       if (peek() === "(") {
-        advance(); // consume '('
+        advance();
         const node = parseExpr();
         if (peek() !== ")") throw new Error("Missing closing parenthesis");
-        advance(); // consume ')'
+        advance();
         return node;
       }
       const ch = advance();
@@ -69,7 +62,7 @@
 
     const ast = parseExpr();
     if (pos < processed.length) {
-      throw new Error(`Unexpected character '${processed[pos]}' at position ${pos}`);
+      throw new Error("Unexpected character '" + processed[pos] + "' at position " + pos);
     }
     return ast;
   }
@@ -81,10 +74,7 @@
       result += c;
       if (i + 1 < regex.length) {
         const next = regex[i + 1];
-        // Insert '.' between: char-char, )-char, *-char, char-(, )-(, *-(  etc.
-        if (needsConcat(c, next)) {
-          result += ".";
-        }
+        if (needsConcat(c, next)) result += ".";
       }
     }
     return result;
@@ -97,23 +87,31 @@
   }
 
   // ----------------------------------------------------------
-  // 2. THOMPSON'S CONSTRUCTION  (AST → NFA)
+  // 2. THOMPSON'S CONSTRUCTION  (AST -> NFA) with step logging
   // ----------------------------------------------------------
 
   let stateCounter = 0;
   function newState() { return stateCounter++; }
 
-  // Returns { start, accept, transitions: [{from, to, symbol}] }
+  let thompsonLog = [];
+
   function thompsonBuild(node) {
     switch (node.type) {
       case "char": {
         const s = newState(), a = newState();
+        thompsonLog.push({
+          tag: "thompson",
+          text: "CHAR '" + node.value + "': created q" + s + " --" + node.value + "--> q" + a
+        });
         return { start: s, accept: a, transitions: [{ from: s, to: a, symbol: node.value }] };
       }
       case "concat": {
         const left  = thompsonBuild(node.left);
         const right = thompsonBuild(node.right);
-        // merge left.accept → right.start via ε
+        thompsonLog.push({
+          tag: "thompson",
+          text: "CONCAT: merged q" + left.accept + " --\u03b5--> q" + right.start + " (start=q" + left.start + ", accept=q" + right.accept + ")"
+        });
         return {
           start: left.start,
           accept: right.accept,
@@ -128,6 +126,10 @@
         const s = newState(), a = newState();
         const left  = thompsonBuild(node.left);
         const right = thompsonBuild(node.right);
+        thompsonLog.push({
+          tag: "thompson",
+          text: "UNION: new start q" + s + " branches to q" + left.start + " and q" + right.start + ", both merge to q" + a
+        });
         return {
           start: s, accept: a,
           transitions: [
@@ -143,6 +145,10 @@
       case "star": {
         const s = newState(), a = newState();
         const inner = thompsonBuild(node.child);
+        thompsonLog.push({
+          tag: "thompson",
+          text: "STAR: new start q" + s + " -> q" + inner.start + ", loop q" + inner.accept + " -> q" + inner.start + ", skip q" + s + " -> q" + a
+        });
         return {
           start: s, accept: a,
           transitions: [
@@ -161,10 +167,10 @@
 
   function buildNFA(regex) {
     stateCounter = 0;
+    thompsonLog = [];
     const ast = parseRegex(regex);
     const nfa = thompsonBuild(ast);
 
-    // Collect all states
     const states = new Set();
     const alphabet = new Set();
     for (const t of nfa.transitions) {
@@ -185,8 +191,10 @@
   }
 
   // ----------------------------------------------------------
-  // 3. SUBSET CONSTRUCTION  (NFA → DFA)
+  // 3. SUBSET CONSTRUCTION  (NFA -> DFA) with step logging
   // ----------------------------------------------------------
+
+  let subsetLog = [];
 
   function epsilonClosure(nfaTransitions, statesSet) {
     const stack = [...statesSet];
@@ -220,18 +228,24 @@
   }
 
   function subsetConstruction(nfa) {
+    subsetLog = [];
     const { alphabet, transitions: nfaTrans, start: nfaStart, accept: nfaAccept } = nfa;
 
     const startClosure = epsilonClosure(nfaTrans, new Set([nfaStart]));
     const startKey = setKey(startClosure);
 
-    const dfaStates = new Map(); // key → id
+    subsetLog.push({
+      tag: "closure",
+      text: "\u03b5-closure({q" + nfaStart + "}) = {" + [...startClosure].sort((a,b)=>a-b).map(s=>"q"+s).join(", ") + "} \u2192 DFA state q0"
+    });
+
+    const dfaStates = new Map();
     let idCounter = 0;
     dfaStates.set(startKey, idCounter++);
 
-    const dfaTransitions = []; // {from, to, symbol}
+    const dfaTransitions = [];
     const dfaAcceptStates = new Set();
-    const stateComposition = new Map(); // id → Set of NFA states
+    const stateComposition = new Map();
 
     stateComposition.set(0, startClosure);
 
@@ -261,9 +275,18 @@
           if (closed.has(nfaAccept)) {
             dfaAcceptStates.add(targetId);
           }
+          subsetLog.push({
+            tag: "state",
+            text: "New DFA state q" + targetId + " = \u03b5-closure(move(q" + currentId + ", '" + sym + "')) = {" + [...closed].sort((a,b)=>a-b).map(s=>"q"+s).join(", ") + "}"
+          });
         } else {
           targetId = dfaStates.get(key);
         }
+
+        subsetLog.push({
+          tag: "move",
+          text: "\u03b4(q" + currentId + ", '" + sym + "') = q" + targetId
+        });
 
         dfaTransitions.push({ from: currentId, to: targetId, symbol: sym });
       }
@@ -278,18 +301,22 @@
       transitions: dfaTransitions,
       start: 0,
       acceptStates: [...dfaAcceptStates],
-      stateComposition // for display
+      stateComposition
     };
   }
 
   // ----------------------------------------------------------
-  // 4. DFA MINIMIZATION  (Hopcroft-style partition refinement)
+  // 4. DFA MINIMIZATION  (Hopcroft-style) with step logging
   // ----------------------------------------------------------
 
+  let partitionLog = [];
+  let partitionHistory = [];
+
   function minimizeDFA(dfa) {
+    partitionLog = [];
+    partitionHistory = [];
     const { states, alphabet, transitions, start, acceptStates } = dfa;
 
-    // Build transition map: state → { symbol → targetState }
     const transMap = new Map();
     for (const s of states) transMap.set(s, {});
     for (const t of transitions) {
@@ -316,12 +343,16 @@
     const reachableAccept = reachableStates.filter(s => accSet.has(s));
     const reachableNonAccept = reachableStates.filter(s => !accSet.has(s));
 
-    // Initial partition
     let partitions = [];
     if (reachableNonAccept.length > 0) partitions.push(reachableNonAccept);
     if (reachableAccept.length > 0) partitions.push(reachableAccept);
 
-    // stateToPartition index
+    partitionLog.push({
+      tag: "partition",
+      text: "Initial partition: " + partitions.map((g, i) => "P" + i + "={" + g.map(s=>"q"+s).join(",") + "}").join("  ")
+    });
+    partitionHistory.push(partitions.map(g => [...g]));
+
     function buildPartitionMap() {
       const map = new Map();
       for (let i = 0; i < partitions.length; i++) {
@@ -332,15 +363,16 @@
       return map;
     }
 
+    let iteration = 0;
     let changed = true;
     while (changed) {
       changed = false;
+      iteration++;
       const pMap = buildPartitionMap();
       const newPartitions = [];
 
       for (const group of partitions) {
-        // Split group
-        const subgroups = new Map(); // signature → [states]
+        const subgroups = new Map();
         for (const s of group) {
           let sig = "";
           for (const sym of alphabet) {
@@ -355,11 +387,24 @@
           newPartitions.push(sg);
         }
 
-        if (subgroups.size > 1) changed = true;
+        if (subgroups.size > 1) {
+          changed = true;
+          partitionLog.push({
+            tag: "split",
+            text: "Iteration " + iteration + ": split {" + group.map(s=>"q"+s).join(",") + "} into " +
+              [...subgroups.values()].map(sg => "{" + sg.map(s=>"q"+s).join(",") + "}").join(" and ")
+          });
+        }
       }
 
       partitions = newPartitions;
+      partitionHistory.push(partitions.map(g => [...g]));
     }
+
+    partitionLog.push({
+      tag: "partition",
+      text: "Final partition (" + partitions.length + " groups): " + partitions.map((g, i) => "P" + i + "={" + g.map(s=>"q"+s).join(",") + "}").join("  ")
+    });
 
     // Build minimized DFA
     const pMap = buildPartitionMap();
@@ -370,11 +415,9 @@
 
     for (let i = 0; i < partitions.length; i++) {
       minStates.push(i);
-      // Accept?
       if (partitions[i].some(s => accSet.has(s))) {
         minAccept.add(i);
       }
-      // Start?
       if (partitions[i].includes(start)) {
         minStart = i;
       }
@@ -387,7 +430,7 @@
         const target = transMap.get(representative)[sym];
         if (target !== undefined) {
           const targetPartition = pMap.get(target);
-          const edgeKey = `${i}-${sym}-${targetPartition}`;
+          const edgeKey = i + "-" + sym + "-" + targetPartition;
           if (!seenEdges.has(edgeKey)) {
             seenEdges.add(edgeKey);
             minTransitions.push({ from: i, to: targetPartition, symbol: sym });
@@ -402,7 +445,7 @@
       transitions: minTransitions,
       start: minStart,
       acceptStates: [...minAccept],
-      partitions // for display
+      partitions
     };
   }
 
@@ -423,7 +466,7 @@
 
     for (const ch of str) {
       if (!alphabet.includes(ch)) {
-        return { accepted: false, path, error: `Character '${ch}' not in alphabet {${alphabet.join(", ")}}` };
+        return { accepted: false, path, error: "Character '" + ch + "' not in alphabet {" + alphabet.join(", ") + "}" };
       }
       const next = transMap.get(current)?.[ch];
       if (next === undefined) {
@@ -438,7 +481,7 @@
   }
 
   // ----------------------------------------------------------
-  // 6. VISUALIZATION  (Cytoscape.js)
+  // 6. VISUALIZATION  (Cytoscape.js) with epsilon highlighting
   // ----------------------------------------------------------
 
   function renderAutomaton(containerId, automaton, isNFA) {
@@ -449,7 +492,6 @@
     const { states, transitions, start } = automaton;
     const acceptSet = new Set(isNFA ? [automaton.accept] : automaton.acceptStates);
 
-    // Nodes
     for (const s of states) {
       const classes = [];
       if (s === start) classes.push("start");
@@ -480,13 +522,16 @@
 
     for (const [key, symbols] of edgeMap) {
       const [from, to] = key.split("->");
+      const hasEpsilon = symbols.includes(EPSILON);
+      const edgeClasses = hasEpsilon ? "epsilon-edge" : "";
       elements.push({
         data: {
           id: "e_" + key,
           source: "s" + from,
           target: "s" + to,
           label: symbols.join(", ")
-        }
+        },
+        classes: edgeClasses
       });
     }
 
@@ -567,6 +612,16 @@
           }
         },
         {
+          selector: "edge.epsilon-edge",
+          style: {
+            "line-color": "#f59e0b",
+            "line-style": "dashed",
+            "target-arrow-color": "#f59e0b",
+            width: 1.5,
+            color: "#fbbf24"
+          }
+        },
+        {
           selector: "edge.start-edge",
           style: {
             "line-color": "#60a5fa",
@@ -575,10 +630,38 @@
           }
         },
         {
-          selector: "node.highlight",
+          selector: "node.anim-active",
           style: {
-            "background-color": "#7c3aed",
-            "border-color": "#a78bfa"
+            "background-color": "#fbbf24",
+            "border-color": "#fbbf24",
+            color: "#0b0d14",
+            "border-width": 4
+          }
+        },
+        {
+          selector: "edge.anim-active",
+          style: {
+            "line-color": "#fbbf24",
+            "target-arrow-color": "#fbbf24",
+            width: 4
+          }
+        },
+        {
+          selector: "node.anim-accept",
+          style: {
+            "background-color": "#22c55e",
+            "border-color": "#22c55e",
+            color: "#fff",
+            "border-width": 4
+          }
+        },
+        {
+          selector: "node.anim-reject",
+          style: {
+            "background-color": "#ef4444",
+            "border-color": "#ef4444",
+            color: "#fff",
+            "border-width": 4
           }
         }
       ],
@@ -600,14 +683,13 @@
   }
 
   // ----------------------------------------------------------
-  // 7. TABLE RENDERING
+  // 7. TABLE RENDERING  (with epsilon column highlight)
   // ----------------------------------------------------------
 
   function renderNFATable(nfa) {
     const { states, alphabet, transitions, start, accept } = nfa;
     const symbols = [...alphabet, EPSILON];
 
-    // Build map: state → { symbol → Set of target states }
     const tMap = new Map();
     for (const s of states) {
       const row = {};
@@ -619,15 +701,20 @@
     }
 
     let html = "<table><thead><tr><th>State</th>";
-    for (const sym of symbols) html += `<th>${sym}</th>`;
+    for (const sym of symbols) {
+      const isEps = sym === EPSILON;
+      html += "<th" + (isEps ? ' class="epsilon-col"' : "") + ">" + sym + "</th>";
+    }
     html += "</tr></thead><tbody>";
 
     for (const s of states) {
-      const prefix = (s === start ? "→ " : "") + (s === accept ? "* " : "");
-      html += `<tr><td>${prefix}q${s}</td>`;
+      const prefix = (s === start ? "\u2192 " : "") + (s === accept ? "* " : "");
+      html += "<tr><td>" + prefix + "q" + s + "</td>";
       for (const sym of symbols) {
+        const isEps = sym === EPSILON;
         const targets = tMap.get(s)[sym];
-        html += `<td>${targets.size > 0 ? [...targets].map(t => "q" + t).join(", ") : "∅"}</td>`;
+        html += "<td" + (isEps ? ' class="epsilon-col"' : "") + ">" +
+          (targets.size > 0 ? [...targets].map(t => "q" + t).join(", ") : "\u2205") + "</td>";
       }
       html += "</tr>";
     }
@@ -651,19 +738,19 @@
 
     let html = "<table><thead><tr><th>State</th>";
     if (composition) html += "<th>NFA States</th>";
-    for (const sym of alphabet) html += `<th>${sym}</th>`;
+    for (const sym of alphabet) html += "<th>" + sym + "</th>";
     html += "</tr></thead><tbody>";
 
     for (const s of states) {
-      const prefix = (s === start ? "→ " : "") + (accSet.has(s) ? "* " : "");
-      html += `<tr><td>${prefix}q${s}</td>`;
+      const prefix = (s === start ? "\u2192 " : "") + (accSet.has(s) ? "* " : "");
+      html += "<tr><td>" + prefix + "q" + s + "</td>";
       if (composition) {
         const nfaStates = composition.get(s);
-        html += `<td>{${[...nfaStates].sort((a, b) => a - b).map(x => "q" + x).join(", ")}}</td>`;
+        html += "<td>{" + [...nfaStates].sort((a, b) => a - b).map(x => "q" + x).join(", ") + "}</td>";
       }
       for (const sym of alphabet) {
         const target = tMap.get(s)[sym];
-        html += `<td>${target !== null ? "q" + target : "∅"}</td>`;
+        html += "<td>" + (target !== null ? "q" + target : "\u2205") + "</td>";
       }
       html += "</tr>";
     }
@@ -672,10 +759,220 @@
   }
 
   // ----------------------------------------------------------
-  // 8. MAIN APP CONTROLLER
+  // 8. STEP LOG RENDERING
+  // ----------------------------------------------------------
+
+  function renderStepLog(containerId, steps) {
+    const el = document.getElementById(containerId);
+    if (!el || steps.length === 0) {
+      if (el) el.innerHTML = '<div class="algo-step" style="color:#4b5563">No steps to display.</div>';
+      return;
+    }
+    let html = "";
+    for (const step of steps) {
+      const tagClass = "tag-" + step.tag;
+      const tagLabel = step.tag.charAt(0).toUpperCase() + step.tag.slice(1);
+      html += '<div class="algo-step"><span class="step-label-tag ' + tagClass + '">' + tagLabel + '</span>' + escapeHtml(step.text) + '</div>';
+    }
+    el.innerHTML = html;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // ----------------------------------------------------------
+  // 9. PARTITION VISUALIZATION
+  // ----------------------------------------------------------
+
+  function renderPartitionViz(dfa, minDfa) {
+    const container = document.getElementById("partitionViz");
+    if (!container || !minDfa.partitions) { return; }
+
+    const accSet = new Set(dfa.acceptStates);
+    let html = "<h4>Final State Partitions</h4><div class='partition-cards'>";
+
+    for (let i = 0; i < minDfa.partitions.length; i++) {
+      const group = minDfa.partitions[i];
+      const isAccept = group.some(s => accSet.has(s));
+      html += '<div class="partition-card' + (isAccept ? ' accept-partition' : '') + '">' +
+        '<span class="partition-label">P' + i + ':</span>' +
+        group.map(s => "q" + s).join(", ") +
+        '</div>';
+    }
+
+    html += "</div>";
+    container.innerHTML = html;
+  }
+
+  // ----------------------------------------------------------
+  // 10. ANIMATED STRING SIMULATION
+  // ----------------------------------------------------------
+
+  let animationRunning = false;
+
+  function animateString(cy, dfa, str) {
+    if (animationRunning) return;
+
+    const animateBtn = document.getElementById("animateBtn");
+    const { alphabet, transitions, start, acceptStates } = dfa;
+    const transMap = new Map();
+    for (const s of dfa.states) transMap.set(s, {});
+    for (const t of transitions) {
+      transMap.get(t.from)[t.symbol] = t.to;
+    }
+
+    // Validate string first
+    for (const ch of str) {
+      if (!alphabet.includes(ch)) return;
+    }
+
+    animationRunning = true;
+    animateBtn.disabled = true;
+
+    // Clear previous animation classes
+    cy.nodes().removeClass("anim-active anim-accept anim-reject");
+    cy.edges().removeClass("anim-active");
+
+    let current = start;
+    const steps = [];
+    let valid = true;
+
+    for (const ch of str) {
+      const next = transMap.get(current)?.[ch];
+      if (next === undefined) {
+        steps.push({ from: current, symbol: ch, to: null });
+        valid = false;
+        break;
+      }
+      steps.push({ from: current, symbol: ch, to: next });
+      current = next;
+    }
+
+    const delay = 600;
+    let stepIdx = 0;
+
+    // Highlight start state
+    const startNode = cy.getElementById("s" + start);
+    startNode.addClass("anim-active");
+
+    function nextStep() {
+      if (stepIdx >= steps.length) {
+        // Final state coloring
+        const finalState = steps.length > 0 ? steps[steps.length - 1].to : start;
+        cy.nodes().removeClass("anim-active");
+        if (finalState !== null) {
+          const finalNode = cy.getElementById("s" + finalState);
+          if (valid && acceptStates.includes(finalState)) {
+            finalNode.addClass("anim-accept");
+          } else {
+            finalNode.addClass("anim-reject");
+          }
+        }
+        animationRunning = false;
+        animateBtn.disabled = false;
+        return;
+      }
+
+      const step = steps[stepIdx];
+
+      // Clear previous highlights
+      cy.nodes().removeClass("anim-active");
+      cy.edges().removeClass("anim-active");
+
+      // Highlight edge
+      const edgeId = "e_" + step.from + "->" + step.to;
+      const edge = cy.getElementById(edgeId);
+      if (edge.length) edge.addClass("anim-active");
+
+      // Highlight target node
+      if (step.to !== null) {
+        const targetNode = cy.getElementById("s" + step.to);
+        targetNode.addClass("anim-active");
+      }
+
+      stepIdx++;
+      setTimeout(nextStep, delay);
+    }
+
+    setTimeout(nextStep, delay);
+  }
+
+  // ----------------------------------------------------------
+  // 11. EXPORT DFA
+  // ----------------------------------------------------------
+
+  function exportDFA(dfa, minDfa) {
+    let text = "=== Regex to DFA Simulator - Export ===\n\n";
+
+    text += "--- DFA ---\n";
+    text += "States: " + dfa.states.map(s => "q" + s).join(", ") + "\n";
+    text += "Alphabet: " + [...dfa.alphabet].join(", ") + "\n";
+    text += "Start: q" + dfa.start + "\n";
+    text += "Accept: " + dfa.acceptStates.map(s => "q" + s).join(", ") + "\n";
+    text += "Transitions:\n";
+    for (const t of dfa.transitions) {
+      text += "  q" + t.from + " --" + t.symbol + "--> q" + t.to + "\n";
+    }
+
+    text += "\n--- Minimized DFA ---\n";
+    text += "States: " + minDfa.states.map(s => "q" + s).join(", ") + "\n";
+    text += "Alphabet: " + [...minDfa.alphabet].join(", ") + "\n";
+    text += "Start: q" + minDfa.start + "\n";
+    text += "Accept: " + minDfa.acceptStates.map(s => "q" + s).join(", ") + "\n";
+    text += "Transitions:\n";
+    for (const t of minDfa.transitions) {
+      text += "  q" + t.from + " --" + t.symbol + "--> q" + t.to + "\n";
+    }
+
+    if (minDfa.partitions) {
+      text += "\nPartitions:\n";
+      for (let i = 0; i < minDfa.partitions.length; i++) {
+        text += "  P" + i + " = {" + minDfa.partitions[i].map(s => "q" + s).join(", ") + "}\n";
+      }
+    }
+
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "dfa-export.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ----------------------------------------------------------
+  // 12. COLLAPSIBLE SECTIONS
+  // ----------------------------------------------------------
+
+  function initCollapsible() {
+    document.querySelectorAll(".section-header.collapsible").forEach(header => {
+      header.addEventListener("click", () => {
+        const targetId = header.getAttribute("data-target");
+        const content = document.getElementById(targetId);
+        if (!content) return;
+        const isCollapsed = content.classList.contains("collapsed");
+        if (isCollapsed) {
+          content.classList.remove("collapsed");
+          header.classList.remove("collapsed");
+        } else {
+          content.classList.add("collapsed");
+          header.classList.add("collapsed");
+        }
+      });
+    });
+  }
+
+  // ----------------------------------------------------------
+  // 13. MAIN APP CONTROLLER
   // ----------------------------------------------------------
 
   let currentMinDfa = null;
+  let currentDfa = null;
+  let minDfaCy = null;
 
   const regexInput   = document.getElementById("regexInput");
   const generateBtn  = document.getElementById("generateBtn");
@@ -687,8 +984,11 @@
   const testSection  = document.getElementById("testSection");
   const testStringEl = document.getElementById("testString");
   const testBtn      = document.getElementById("testBtn");
+  const animateBtn   = document.getElementById("animateBtn");
   const testResult   = document.getElementById("testResult");
   const simPath      = document.getElementById("simulationPath");
+  const exportSection = document.getElementById("exportSection");
+  const exportBtn    = document.getElementById("exportBtn");
 
   function showError(msg) {
     errorMsg.textContent = msg;
@@ -705,9 +1005,12 @@
     dfaSection.classList.add("hidden");
     minDfaSection.classList.add("hidden");
     testSection.classList.add("hidden");
+    exportSection.classList.add("hidden");
     testResult.classList.add("hidden");
     simPath.classList.add("hidden");
     currentMinDfa = null;
+    currentDfa = null;
+    minDfaCy = null;
   }
 
   function updatePipeline(step) {
@@ -723,7 +1026,6 @@
 
   function validateRegex(regex) {
     if (!regex) return "Please enter a regular expression.";
-    // Check balanced parentheses
     let depth = 0;
     for (const ch of regex) {
       if (ch === "(") depth++;
@@ -731,13 +1033,11 @@
       if (depth < 0) return "Unmatched closing parenthesis.";
     }
     if (depth !== 0) return "Unmatched opening parenthesis.";
-    // Check for invalid characters
     for (const ch of regex) {
       if (!/[a-zA-Z0-9()|*]/.test(ch)) {
-        return `Invalid character '${ch}'. Supported: letters, digits, |, *, (, )`;
+        return "Invalid character '" + ch + "'. Supported: letters, digits, |, *, (, )";
       }
     }
-    // Check for empty union operands
     if (/\|$|^\||(\|\|)/.test(regex)) {
       return "Invalid empty union operand.";
     }
@@ -764,9 +1064,11 @@
       document.getElementById("nfaAccept").textContent = "q" + nfa.accept;
       document.getElementById("nfaCount").textContent  = nfa.states.length;
       renderAutomaton("nfaGraph", nfa, true);
+      renderStepLog("nfaSteps", thompsonLog);
 
       // Step 2: DFA
       const dfa = subsetConstruction(nfa);
+      currentDfa = dfa;
       dfaSection.classList.remove("hidden");
       updatePipeline("dfa");
 
@@ -775,6 +1077,7 @@
       document.getElementById("dfaAccept").textContent = dfa.acceptStates.map(s => "q" + s).join(", ");
       document.getElementById("dfaCount").textContent  = dfa.states.length;
       renderAutomaton("dfaGraph", dfa, false);
+      renderStepLog("dfaSteps", subsetLog);
 
       // Step 3: Minimized DFA
       const minDfa = minimizeDFA(dfa);
@@ -789,15 +1092,18 @@
       const reduced = dfa.states.length - minDfa.states.length;
       const reductionEl = document.getElementById("reduction");
       if (reduced > 0) {
-        reductionEl.textContent = `(Reduced by ${reduced} state${reduced > 1 ? "s" : ""}: ${dfa.states.length} → ${minDfa.states.length})`;
+        reductionEl.textContent = "(Reduced by " + reduced + " state" + (reduced > 1 ? "s" : "") + ": " + dfa.states.length + " \u2192 " + minDfa.states.length + ")";
       } else {
         reductionEl.textContent = "(Already minimal)";
       }
 
-      renderAutomaton("minDfaGraph", minDfa, false);
+      minDfaCy = renderAutomaton("minDfaGraph", minDfa, false);
+      renderStepLog("partitionSteps", partitionLog);
+      renderPartitionViz(dfa, minDfa);
 
-      // Show test section
+      // Show test section and export
       testSection.classList.remove("hidden");
+      exportSection.classList.remove("hidden");
       updatePipeline("test");
       currentMinDfa = minDfa;
 
@@ -809,7 +1115,7 @@
   function runTest() {
     if (!currentMinDfa) return;
 
-    const str = testStringEl.value;  // allow empty string
+    const str = testStringEl.value;
     const result = testString(currentMinDfa, str);
 
     testResult.classList.remove("hidden", "accepted", "rejected");
@@ -817,26 +1123,26 @@
 
     if (result.error) {
       testResult.classList.add("rejected");
-      testResult.textContent = `REJECTED — ${result.error}`;
+      testResult.textContent = "REJECTED \u2014 " + result.error;
       simPath.innerHTML = "";
       return;
     }
 
     testResult.classList.add(result.accepted ? "accepted" : "rejected");
     testResult.textContent = result.accepted
-      ? `✓ ACCEPTED — String "${str}" is in the language.`
-      : `✗ REJECTED — String "${str}" is NOT in the language.`;
+      ? "\u2713 ACCEPTED \u2014 String \"" + str + "\" is in the language."
+      : "\u2717 REJECTED \u2014 String \"" + str + "\" is NOT in the language.";
 
     // Build simulation path display
     let pathHtml = "<strong>Simulation Trace:</strong><br>";
     for (let i = 0; i < result.path.length; i++) {
       const step = result.path[i];
       if (i === 0) {
-        pathHtml += `<span class="state-tag">q${step.state}</span>`;
+        pathHtml += '<span class="state-tag">q' + step.state + '</span>';
       } else if (step.state !== null) {
-        pathHtml += ` —<span class="step-highlight">${step.symbol}</span>→ <span class="state-tag">q${step.state}</span>`;
+        pathHtml += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag">q' + step.state + '</span>';
       } else {
-        pathHtml += ` —<span class="step-highlight">${step.symbol}</span>→ <span class="state-tag reject-tag">dead</span>`;
+        pathHtml += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag reject-tag">dead</span>';
       }
     }
 
@@ -844,7 +1150,7 @@
     if (finalState !== null) {
       const tag = result.accepted ? "accept-tag" : "reject-tag";
       const label = result.accepted ? "ACCEPT" : "NOT ACCEPT";
-      pathHtml += ` → <span class="state-tag ${tag}">${label}</span>`;
+      pathHtml += ' \u2192 <span class="state-tag ' + tag + '">' + label + '</span>';
     }
 
     simPath.innerHTML = pathHtml;
@@ -863,6 +1169,21 @@
     if (e.key === "Enter") runTest();
   });
 
+  animateBtn.addEventListener("click", () => {
+    if (!currentMinDfa || !minDfaCy) return;
+    const str = testStringEl.value;
+    // Run the test first to show results
+    runTest();
+    // Then animate on the graph
+    animateString(minDfaCy, currentMinDfa, str);
+  });
+
+  exportBtn.addEventListener("click", () => {
+    if (currentDfa && currentMinDfa) {
+      exportDFA(currentDfa, currentMinDfa);
+    }
+  });
+
   // Example buttons
   document.querySelectorAll(".btn-example").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -870,5 +1191,8 @@
       runPipeline();
     });
   });
+
+  // Initialize collapsible sections
+  initCollapsible();
 
 })();
