@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Regex to DFA Simulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="Interactive Regex to DFA Simulator — Convert regular expressions to NFA, DFA, and minimized DFA with step-by-step visualization and string testing." />
+  <meta name="theme-color" content="#0a0c14" />
+  <title>Regex to DFA Simulator — Theory of Computation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -11,8 +13,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
 </head>
 <body>
+  <!-- Interactive Particle Background -->
+  <div id="particles-js"></div>
+
   <!-- Header -->
   <header class="app-header">
     <div class="header-badge">Theory of Computation</div>
@@ -22,13 +29,13 @@
 
   <main class="container">
     <!-- Regex Input Panel -->
-    <section class="panel input-panel">
+    <section class="panel input-panel" id="inputPanel">
       <h2>Regular Expression Input</h2>
       <div class="input-row">
-        <input type="text" id="regexInput" placeholder="Enter regex, e.g. (a|b)*abb" spellcheck="false" />
-        <button id="generateBtn" class="btn btn-primary">Generate Automata</button>
+        <input type="text" id="regexInput" placeholder="Enter regex, e.g. (a|b)*abb" spellcheck="false" autocomplete="off" aria-label="Regular expression input" />
+        <button id="generateBtn" class="btn btn-primary" aria-label="Generate automata from regex">Generate Automata</button>
       </div>
-      <div class="examples">
+      <div class="examples" role="group" aria-label="Example regular expressions">
         <span class="examples-label">Examples:</span>
         <button class="btn btn-example" data-regex="(a|b)*abb">(a|b)*abb</button>
         <button class="btn btn-example" data-regex="a*b*">a*b*</button>
@@ -37,11 +44,11 @@
         <button class="btn btn-example" data-regex="(a|b)*">(a|b)*</button>
         <button class="btn btn-example" data-regex="a(b|c)*d">a(b|c)*d</button>
       </div>
-      <div id="errorMsg" class="error-msg hidden"></div>
+      <div id="errorMsg" class="error-msg hidden" role="alert"></div>
     </section>
 
     <!-- Pipeline Indicator -->
-    <div id="pipeline" class="pipeline hidden">
+    <div id="pipeline" class="pipeline hidden" role="navigation" aria-label="Processing pipeline steps">
       <div class="pipeline-step active" data-step="nfa">
         <div class="step-num">1</div>
         <div class="step-label">NFA</div>
@@ -151,18 +158,18 @@
       </div>
       <div id="testContent" class="collapsible-content">
         <div class="input-row">
-          <input type="text" id="testString" placeholder="Enter a test string, e.g. abb" spellcheck="false" />
+          <input type="text" id="testString" placeholder="Enter a test string, e.g. abb" spellcheck="false" autocomplete="off" aria-label="Test string input" />
           <button id="testBtn" class="btn btn-primary">Test String</button>
           <button id="animateBtn" class="btn btn-animate" title="Animate the string processing on the MinDFA graph">&#9654; Animate</button>
         </div>
-        <div id="testResult" class="test-result hidden"></div>
+        <div id="testResult" class="test-result hidden" role="status"></div>
         <div id="simulationPath" class="sim-path hidden"></div>
       </div>
     </section>
 
     <!-- Export Section -->
     <div id="exportSection" class="export-section hidden">
-      <button id="exportBtn" class="btn btn-export" title="Export the minimized DFA definition as a text file">&#11015; Export DFA</button>
+      <button id="exportBtn" class="btn btn-export" title="Export a comprehensive PDF report of the regex-to-DFA conversion">&#11015; Export PDF Report</button>
     </div>
   </main>
 
@@ -172,5 +179,47 @@
   </footer>
 
   <script src="app.js"></script>
+  <script>
+    // Initialize particles.js interactive background
+    particlesJS("particles-js", {
+      particles: {
+        number: { value: 120, density: { enable: true, value_area: 900 } },
+        color: { value: ["#8b5cf6", "#6366f1", "#a78bfa", "#c4b5fd"] },
+        shape: { type: "circle" },
+        opacity: { value: 0.5, random: true, anim: { enable: true, speed: 0.8, opacity_min: 0.1, sync: false } },
+        size: { value: 3, random: true, anim: { enable: true, speed: 2, size_min: 0.5, sync: false } },
+        line_linked: {
+          enable: true,
+          distance: 150,
+          color: "#8b5cf6",
+          opacity: 0.2,
+          width: 1
+        },
+        move: {
+          enable: true,
+          speed: 1.5,
+          direction: "none",
+          random: true,
+          straight: false,
+          out_mode: "out",
+          bounce: false,
+          attract: { enable: true, rotateX: 600, rotateY: 1200 }
+        }
+      },
+      interactivity: {
+        detect_on: "window",
+        events: {
+          onhover: { enable: true, mode: "repulse" },
+          onclick: { enable: true, mode: "push" },
+          resize: true
+        },
+        modes: {
+          repulse: { distance: 120, duration: 0.4 },
+          push: { particles_nb: 4 }
+        }
+      },
+      retina_detect: true
+    });
+  </script>
 </body>
 </html>
