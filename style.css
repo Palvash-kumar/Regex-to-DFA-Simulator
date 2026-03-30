@@ -41,6 +41,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+  position: relative;
 }
 
 /* Animated background grid */
@@ -108,13 +109,15 @@ body::before {
 
 /* ===== Header ===== */
 .app-header {
-  background: linear-gradient(160deg, #0d1025 0%, #131730 40%, #181040 100%);
+  background: linear-gradient(160deg, rgba(13, 16, 37, 0.4) 0%, rgba(19, 23, 48, 0.35) 40%, rgba(24, 16, 64, 0.3) 100%);
   border-bottom: 1px solid var(--border-glow);
   text-align: center;
   padding: 3rem 1.5rem 2.75rem;
   position: relative;
   overflow: hidden;
   z-index: 1;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .app-header::before {
@@ -125,8 +128,8 @@ body::before {
   width: 150%;
   height: 220%;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246, 0.1) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 60%, rgba(99, 102, 241, 0.05) 0%, transparent 45%);
+    radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246, 0.06) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 60%, rgba(99, 102, 241, 0.03) 0%, transparent 45%);
   pointer-events: none;
   animation: headerGlow 8s ease-in-out infinite alternate;
 }
@@ -936,9 +939,11 @@ body::before {
   color: #4b5563;
   font-size: 0.82rem;
   border-top: 1px solid rgba(55, 60, 85, 0.25);
-  background: linear-gradient(180deg, transparent, rgba(11, 13, 20, 0.6));
+  background: linear-gradient(180deg, rgba(10, 12, 20, 0.2), rgba(11, 13, 20, 0.35));
   position: relative;
   z-index: 1;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .app-footer::before {
