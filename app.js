@@ -663,6 +663,34 @@
             color: "#fff",
             "border-width": 4
           }
+        },
+        {
+          selector: "node.anim-visited",
+          style: {
+            "background-color": "rgba(139, 92, 246, 0.35)",
+            "border-color": "rgba(139, 92, 246, 0.5)",
+            color: "#a78bfa",
+            "border-width": 2.5
+          }
+        },
+        {
+          selector: "edge.anim-visited",
+          style: {
+            "line-color": "rgba(139, 92, 246, 0.3)",
+            "target-arrow-color": "rgba(139, 92, 246, 0.3)",
+            width: 2
+          }
+        },
+        {
+          selector: "node.anim-pulse",
+          style: {
+            "background-color": "#fbbf24",
+            "border-color": "#f59e0b",
+            color: "#0b0d14",
+            "border-width": 5,
+            width: 54,
+            height: 54
+          }
         }
       ],
       layout: {
@@ -810,10 +838,44 @@
   }
 
   // ----------------------------------------------------------
-  // 10. ANIMATED STRING SIMULATION
+  // 10. ANIMATED STRING SIMULATION (Professional Edition)
   // ----------------------------------------------------------
 
   let animationRunning = false;
+  let animationTimers = [];
+
+  function clearAnimationTimers() {
+    animationTimers.forEach(t => clearTimeout(t));
+    animationTimers = [];
+  }
+
+  function createAnimOverlay(graphContainer) {
+    // Remove any existing overlay
+    const existing = graphContainer.querySelector('.anim-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'anim-overlay';
+    overlay.innerHTML = `
+      <div class="anim-char-display">
+        <div class="anim-string-track"></div>
+        <div class="anim-current-info">
+          <span class="anim-state-label"></span>
+        </div>
+      </div>
+    `;
+    graphContainer.style.position = 'relative';
+    graphContainer.appendChild(overlay);
+    return overlay;
+  }
+
+  function removeAnimOverlay(graphContainer) {
+    const overlay = graphContainer.querySelector('.anim-overlay');
+    if (overlay) {
+      overlay.classList.add('anim-overlay-exit');
+      setTimeout(() => overlay.remove(), 400);
+    }
+  }
 
   function animateString(cy, dfa, str) {
     if (animationRunning) return;
@@ -821,6 +883,7 @@
     const animateBtnEl = document.getElementById("animateBtn");
     const testResultEl = document.getElementById("testResult");
     const simPathEl    = document.getElementById("simulationPath");
+    const animGraphContainer = document.getElementById("animGraphContainer");
     const { alphabet, transitions, start, acceptStates } = dfa;
     const transMap = new Map();
     for (const s of dfa.states) transMap.set(s, {});
@@ -835,20 +898,44 @@
         testResultEl.classList.add("rejected");
         testResultEl.textContent = "REJECTED \u2014 Character '" + ch + "' not in alphabet {" + alphabet.join(", ") + "}";
         simPathEl.classList.add("hidden");
+        animGraphContainer.classList.add("hidden");
         return;
       }
     }
 
     animationRunning = true;
     animateBtnEl.disabled = true;
+    clearAnimationTimers();
 
-    // Clear previous results and animation classes
+    // Clear previous results
     testResultEl.classList.add("hidden");
     testResultEl.classList.remove("accepted", "rejected");
     simPathEl.classList.remove("hidden");
     simPathEl.innerHTML = "<strong>Simulation Trace:</strong><br>";
-    cy.nodes().removeClass("anim-active anim-accept anim-reject");
-    cy.edges().removeClass("anim-active");
+
+    // Show and render a fresh MinDFA graph inside Step 4
+    animGraphContainer.classList.remove("hidden");
+    const animCy = renderAutomaton("animGraph", dfa, false);
+
+    // Create overlay on the animation graph
+    const graphEl = document.getElementById("animGraph");
+    const overlay = createAnimOverlay(graphEl);
+    const stringTrack = overlay.querySelector('.anim-string-track');
+    const stateLabel = overlay.querySelector('.anim-state-label');
+
+    // Build string character display
+    let trackHtml = '';
+    for (let i = 0; i < str.length; i++) {
+      trackHtml += '<span class="anim-char" data-idx="' + i + '">' + str[i] + '</span>';
+    }
+    if (str.length === 0) {
+      trackHtml = '<span class="anim-char anim-char-empty">ε</span>';
+    }
+    stringTrack.innerHTML = trackHtml;
+    stateLabel.textContent = 'State: q' + start;
+
+    // Scroll the animation graph into view
+    animGraphContainer.scrollIntoView({ behavior: "smooth", block: "center" });
 
     // Pre-compute all steps
     let current = start;
@@ -867,39 +954,79 @@
     }
 
     const accepted = valid && acceptStates.includes(current);
-    const delay = 700;
+    const stepDelay = Math.max(900, Math.min(1800, 4500 / (str.length + 1)));
     let stepIdx = 0;
 
-    // Show start state on graph and in trace
-    const startNode = cy.getElementById("s" + start);
+    // Show start state — animate the node
+    const startNode = animCy.getElementById("s" + start);
     startNode.addClass("anim-active");
-    simPathEl.innerHTML += '<span class="state-tag">q' + start + '</span>';
+    
+    // Smooth zoom to start node
+    animCy.animate({
+      center: { eles: startNode },
+      zoom: Math.min(animCy.zoom() * 1.15, 2.2),
+      duration: 600,
+      easing: 'ease-in-out-cubic'
+    });
+
+    simPathEl.innerHTML += '<span class="state-tag anim-state-appear">q' + start + '</span>';
 
     function nextStep() {
       if (stepIdx >= steps.length) {
         // Animation finished — show final result
-        cy.nodes().removeClass("anim-active");
+        animCy.nodes().removeClass("anim-active anim-pulse");
+        animCy.edges().removeClass("anim-active");
 
         const finalState = steps.length > 0 ? steps[steps.length - 1].to : start;
 
         if (finalState !== null) {
-          const finalNode = cy.getElementById("s" + finalState);
+          const finalNode = animCy.getElementById("s" + finalState);
           if (accepted) {
             finalNode.addClass("anim-accept");
+            stateLabel.textContent = '✓ ACCEPTED at q' + finalState;
+            stateLabel.classList.add('anim-label-accept');
           } else {
             finalNode.addClass("anim-reject");
+            stateLabel.textContent = '✗ REJECTED at q' + finalState;
+            stateLabel.classList.add('anim-label-reject');
           }
+
+          // Zoom to final node
+          animCy.animate({
+            center: { eles: finalNode },
+            duration: 500,
+            easing: 'ease-in-out-cubic'
+          });
+
           const tag = accepted ? "accept-tag" : "reject-tag";
           const label = accepted ? "ACCEPT" : "NOT ACCEPT";
-          simPathEl.innerHTML += ' \u2192 <span class="state-tag ' + tag + '">' + label + '</span>';
+          simPathEl.innerHTML += ' \u2192 <span class="state-tag ' + tag + ' anim-state-appear">' + label + '</span>';
         }
 
-        // Show final verdict banner
-        testResultEl.classList.remove("hidden", "accepted", "rejected");
-        testResultEl.classList.add(accepted ? "accepted" : "rejected");
-        testResultEl.textContent = accepted
-          ? "\u2713 ACCEPTED \u2014 String \"" + str + "\" is in the language."
-          : "\u2717 REJECTED \u2014 String \"" + str + "\" is NOT in the language.";
+        // Show final verdict banner after a brief pause
+        const t1 = setTimeout(() => {
+          testResultEl.classList.remove("hidden", "accepted", "rejected");
+          testResultEl.classList.add(accepted ? "accepted" : "rejected");
+          testResultEl.textContent = accepted
+            ? "\u2713 ACCEPTED \u2014 String \"" + str + "\" is in the language."
+            : "\u2717 REJECTED \u2014 String \"" + str + "\" is NOT in the language.";
+          
+          // Scroll test result into view
+          testResultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, 600);
+        animationTimers.push(t1);
+
+        // Remove overlay after showing result, keep graph visible
+        const t2 = setTimeout(() => {
+          removeAnimOverlay(graphEl);
+          // Fit graph back to full view
+          animCy.animate({
+            fit: { eles: animCy.elements(), padding: 30 },
+            duration: 800,
+            easing: 'ease-in-out-cubic'
+          });
+        }, 2000);
+        animationTimers.push(t2);
 
         animationRunning = false;
         animateBtnEl.disabled = false;
@@ -908,31 +1035,61 @@
 
       const step = steps[stepIdx];
 
-      // Clear previous highlights on graph
-      cy.nodes().removeClass("anim-active");
-      cy.edges().removeClass("anim-active");
+      // Mark current character in the overlay
+      const charEls = overlay.querySelectorAll('.anim-char');
+      charEls.forEach((el, i) => {
+        el.classList.remove('anim-char-active', 'anim-char-done');
+        if (i < stepIdx) el.classList.add('anim-char-done');
+        if (i === stepIdx) el.classList.add('anim-char-active');
+      });
 
-      // Highlight edge on graph
+      // Mark previous node as visited (trail effect)
+      const prevNode = animCy.getElementById("s" + step.from);
+      prevNode.removeClass("anim-active anim-pulse");
+      prevNode.addClass("anim-visited");
+
+      // Clear active edge highlights
+      animCy.edges().removeClass("anim-active");
+
+      // Highlight edge on graph with animation
       if (step.to !== null) {
         const edgeId = "e_" + step.from + "->" + step.to;
-        const edge = cy.getElementById(edgeId);
-        if (edge.length) edge.addClass("anim-active");
+        const edge = animCy.getElementById(edgeId);
+        if (edge.length) {
+          edge.addClass("anim-active");
+        }
       }
 
-      // Highlight target node on graph & append to trace
-      if (step.to !== null) {
-        const targetNode = cy.getElementById("s" + step.to);
-        targetNode.addClass("anim-active");
-        simPathEl.innerHTML += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag">q' + step.to + '</span>';
-      } else {
-        simPathEl.innerHTML += ' \u2014<span class="step-highlight">' + step.symbol + '</span>\u2192 <span class="state-tag reject-tag">dead</span>';
-      }
+      // Short pause to show edge, then highlight target node
+      const t = setTimeout(() => {
+        if (step.to !== null) {
+          const targetNode = animCy.getElementById("s" + step.to);
+          targetNode.addClass("anim-active anim-pulse");
+          stateLabel.textContent = 'State: q' + step.to;
 
-      stepIdx++;
-      setTimeout(nextStep, delay);
+          // Pan to the target node smoothly
+          animCy.animate({
+            center: { eles: targetNode },
+            duration: 350,
+            easing: 'ease-in-out-cubic'
+          });
+
+          simPathEl.innerHTML += ' \u2014<span class="step-highlight anim-step-appear">' + step.symbol + '</span>\u2192 <span class="state-tag anim-state-appear">q' + step.to + '</span>';
+        } else {
+          stateLabel.textContent = '✗ Dead state';
+          stateLabel.classList.add('anim-label-reject');
+          simPathEl.innerHTML += ' \u2014<span class="step-highlight anim-step-appear">' + step.symbol + '</span>\u2192 <span class="state-tag reject-tag anim-state-appear">dead</span>';
+        }
+
+        stepIdx++;
+        const t2 = setTimeout(nextStep, stepDelay * 0.6);
+        animationTimers.push(t2);
+      }, stepDelay * 0.4);
+      animationTimers.push(t);
     }
 
-    setTimeout(nextStep, delay);
+    const startDelay = setTimeout(nextStep, stepDelay);
+    animationTimers.push(startDelay);
   }
 
   // ----------------------------------------------------------
@@ -1209,7 +1366,19 @@
     testSection.classList.add("hidden");
     exportSection.classList.add("hidden");
     testResult.classList.add("hidden");
+    testResult.classList.remove("accepted", "rejected");
     simPath.classList.add("hidden");
+    simPath.innerHTML = "";
+    // Reset animation graph and test input
+    const animGraphContainer = document.getElementById("animGraphContainer");
+    if (animGraphContainer) {
+      animGraphContainer.classList.add("hidden");
+      document.getElementById("animGraph").innerHTML = "";
+    }
+    testStringEl.value = "";
+    // Cancel any running animation
+    clearAnimationTimers();
+    animationRunning = false;
     currentNfa = null;
     currentDfa = null;
     currentMinDfa = null;
