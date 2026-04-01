@@ -676,7 +676,10 @@
       },
       userZoomingEnabled: true,
       userPanningEnabled: true,
-      boxSelectionEnabled: false
+      boxSelectionEnabled: false,
+      wheelSensitivity: 0.3,
+      minZoom: 0.3,
+      maxZoom: 3
     });
 
     return cy;
