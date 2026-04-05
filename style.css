@@ -573,12 +573,18 @@ body::before {
   flex-direction: column;
   align-items: center;
   gap: 0.35rem;
-  cursor: default;
+  cursor: pointer;
   padding: 0.55rem 1.2rem;
   border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
   transition: all var(--transition-smooth);
+}
+
+.pipeline-step:hover {
+  transform: translateY(-2px);
+  border-color: rgba(139, 92, 246, 0.2);
+  background: rgba(139, 92, 246, 0.04);
 }
 
 .pipeline-step.active {

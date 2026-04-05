@@ -1566,6 +1566,36 @@
     });
   });
 
+  // Pipeline step click → scroll to corresponding section
+  const stepSectionMap = {
+    nfa: nfaSection,
+    dfa: dfaSection,
+    minDfa: minDfaSection,
+    test: testSection
+  };
+
+  document.querySelectorAll(".pipeline-step").forEach(step => {
+    step.addEventListener("click", () => {
+      const key = step.getAttribute("data-step");
+      const section = stepSectionMap[key];
+      if (!section || section.classList.contains("hidden")) return;
+
+      // Expand the section if it's collapsed
+      const header = section.querySelector(".section-header.collapsible");
+      if (header) {
+        const targetId = header.getAttribute("data-target");
+        const content = document.getElementById(targetId);
+        if (content && content.classList.contains("collapsed")) {
+          content.classList.remove("collapsed");
+          header.classList.remove("collapsed");
+        }
+      }
+
+      // Smooth scroll to the section
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
   // Initialize collapsible sections
   initCollapsible();
 
